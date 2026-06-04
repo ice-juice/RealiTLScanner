@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,20 @@ const (
 	HostTypeCIDR
 	HostTypeDomain
 )
+
+var csvHeader = []string{
+	"IP",
+	"ORIGIN",
+	"TLS",
+	"ALPN",
+	"CURVE",
+	"CERT_LENGTH",
+	"CERT_SIGNATURE",
+	"CERT_PUBLICKEY",
+	"CERT_DOMAIN",
+	"CERT_ISSUER",
+	"GEO_CODE",
+}
 
 type HostType int
 
@@ -183,15 +198,52 @@ func RemoveDuplicateStr(strSlice []string) []string {
 	}
 	return list
 }
-func OutWriter(writer io.Writer) chan<- string {
-	ch := make(chan string)
-	go func() {
-		for s := range ch {
-			_, _ = io.WriteString(writer, s)
-		}
-	}()
-	return ch
+
+type CSVResultWriter struct {
+	rows chan []string
+	done chan error
 }
+
+func NewCSVResultWriter(writer io.Writer) *CSVResultWriter {
+	rows := make(chan []string)
+	done := make(chan error, 1)
+	csvWriter := csv.NewWriter(writer)
+	go func() {
+		var firstErr error
+		for row := range rows {
+			if err := csvWriter.Write(row); err != nil && firstErr == nil {
+				firstErr = err
+			}
+			csvWriter.Flush()
+			if err := csvWriter.Error(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		csvWriter.Flush()
+		if err := csvWriter.Error(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		done <- firstErr
+	}()
+	return &CSVResultWriter{
+		rows: rows,
+		done: done,
+	}
+}
+
+func (o *CSVResultWriter) Rows() chan<- []string {
+	return o.rows
+}
+
+func (o *CSVResultWriter) Write(row []string) {
+	o.rows <- row
+}
+
+func (o *CSVResultWriter) Close() error {
+	close(o.rows)
+	return <-o.done
+}
+
 func NextIP(ip net.IP, increment bool) net.IP {
 	// Convert to big.Int and increment
 	ipb := big.NewInt(0).SetBytes(ip)

@@ -61,8 +61,16 @@ func main() {
 			return
 		}
 		defer f.Close()
-		_, _ = f.WriteString("IP,ORIGIN,TLS,ALPN,CURVE,CERT_LENGTH,CERT_SIGNATURE,CERT_PUBLICKEY,CERT_DOMAIN,CERT_ISSUER,GEO_CODE\n")
 		outWriter = f
+	}
+	resultWriter := NewCSVResultWriter(outWriter)
+	defer func() {
+		if err := resultWriter.Close(); err != nil {
+			slog.Error("Error writing output", "err", err)
+		}
+	}()
+	if out != "" {
+		resultWriter.Write(csvHeader)
 	}
 	var hostChan <-chan Host
 	if addr != "" {
@@ -97,15 +105,15 @@ func main() {
 		slog.Info("Parsed domains", "count", len(domains))
 		hostChan = Iterate(strings.NewReader(strings.Join(domains, "\n")))
 	}
-	outCh := OutWriter(outWriter)
-	defer close(outCh)
+	outCh := resultWriter.Rows()
 	geo := NewGeo()
+	domains := NewDomainDeduper()
 	var wg sync.WaitGroup
 	wg.Add(thread)
 	for i := 0; i < thread; i++ {
 		go func() {
 			for ip := range hostChan {
-				ScanTLS(ip, outCh, geo)
+				ScanTLS(ip, outCh, geo, domains)
 			}
 			wg.Done()
 		}()
