@@ -37,7 +37,8 @@ jobs:
             local goos="$1"
             local goarch="$2"
             local ext="$3"
-            local name="RealiTLScanner-${version}-${goos}-${goarch}"
+            local label="$4"
+            local name="RealiTLScanner-${version}-${label}"
             local pkg="dist/${name}"
 
             mkdir -p "${pkg}"
@@ -52,14 +53,14 @@ jobs:
             fi
           }
 
-          build_asset windows 386 .exe
-          build_asset windows amd64 .exe
-          build_asset windows arm64 .exe
-          build_asset darwin amd64 ""
-          build_asset darwin arm64 ""
-          build_asset linux 386 ""
-          build_asset linux amd64 ""
-          build_asset linux arm64 ""
+          build_asset windows 386 .exe windows-x86
+          build_asset windows amd64 .exe windows-x64
+          build_asset windows arm64 .exe windows-arm64
+          build_asset darwin amd64 "" macos-intel
+          build_asset darwin arm64 "" macos-apple-silicon
+          build_asset linux 386 "" linux-x86
+          build_asset linux amd64 "" linux-x64
+          build_asset linux arm64 "" linux-arm64
 
           (cd dist && sha256sum *.zip *.tar.gz > SHA256SUMS.txt)
 
@@ -76,9 +77,14 @@ jobs:
 
           ## Assets
 
-          - Windows: 386, amd64, arm64
-          - macOS: amd64 (Intel), arm64 (Apple Silicon)
-          - Linux: 386, amd64, arm64
+          - Windows x64: 64-bit Intel/AMD Windows
+          - Windows x86: 32-bit Windows
+          - Windows ARM64: ARM-based Windows devices
+          - macOS Intel: Intel-based Macs
+          - macOS Apple Silicon: M-series Macs
+          - Linux x64: 64-bit Intel/AMD Linux
+          - Linux x86: 32-bit Linux
+          - Linux ARM64: ARM-based Linux
 
           See `SHA256SUMS.txt` for checksums.
           EOF
