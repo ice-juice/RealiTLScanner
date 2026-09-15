@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1280" viewBox="0 0 1800 1280" role="img" aria-labelledby="title desc">
+  <title id="title">SNI 域名在 Reality 请求中的作用与路径</title>
+  <desc id="desc">说明 SNI 域名在 Reality 协议请求中，从客户端 TLS ClientHello 到 Reality 节点校验，再进入代理隧道或回落到伪装目标网站的路径。</desc>
+  <defs>
+    <marker id="arrowBlue" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="16" refY="9" orient="auto">
+      <path d="M 0 0 L 18 9 L 0 18 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrowGreen" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="16" refY="9" orient="auto">
+      <path d="M 0 0 L 18 9 L 0 18 z" fill="#059669"/>
+    </marker>
+    <marker id="arrowSlate" markerUnits="userSpaceOnUse" markerWidth="18" markerHeight="18" refX="16" refY="9" orient="auto">
+      <path d="M 0 0 L 18 9 L 0 18 z" fill="#64748b"/>
+    </marker>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <linearGradient id="headerGrad" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#0891b2"/>
+    </linearGradient>
+    <style>
+      .font { font-family: "Microsoft YaHei", "Noto Sans CJK SC", Arial, sans-serif; }
+      .title { font-size: 46px; font-weight: 700; fill: #ffffff; }
+      .subtitle { font-size: 24px; fill: #e0f7ff; }
+      .card-title { font-size: 30px; font-weight: 700; fill: #0f172a; }
+      .card-sub { font-size: 21px; fill: #475569; }
+      .body { font-size: 22px; fill: #0f172a; }
+      .small { font-size: 19px; fill: #475569; }
+      .label { font-size: 20px; font-weight: 700; fill: #ffffff; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1280" fill="#f8fafc"/>
+  <rect width="1800" height="150" fill="url(#headerGrad)"/>
+  <text x="900" y="66" text-anchor="middle" class="font title">SNI 域名在 Reality 请求中的作用与路径</text>
+  <text x="900" y="110" text-anchor="middle" class="font subtitle">SNI 全称：Server Name Indication（服务器名称指示）</text>
+
+  <!-- Main cards -->
+  <g id="client" transform="translate(80 250)">
+    <rect x="0" y="0" width="330" height="300" rx="20" fill="#ffffff" stroke="#dbeafe" stroke-width="2" filter="url(#softShadow)"/>
+    <rect x="82" y="68" width="166" height="108" rx="12" fill="#e0f2fe" stroke="#0ea5e9" stroke-width="4"/>
+    <rect x="112" y="92" width="106" height="58" rx="7" fill="#ffffff"/>
+    <circle cx="165" cy="122" r="13" fill="#2563eb"/>
+    <rect x="62" y="184" width="208" height="26" rx="8" fill="#0ea5e9"/>
+    <text x="165" y="248" text-anchor="middle" class="font card-title">用户设备</text>
+    <text x="165" y="280" text-anchor="middle" class="font card-sub">Reality 客户端</text>
+  </g>
+
+  <g id="node" transform="translate(670 230)">
+    <rect x="0" y="0" width="520" height="360" rx="24" fill="#ffffff" stroke="#bfdbfe" stroke-width="2" filter="url(#softShadow)"/>
+    <text x="260" y="55" text-anchor="middle" class="font card-title">Reality 节点</text>
+    <text x="260" y="88" text-anchor="middle" class="font card-sub">接收 TLS 握手并校验 serverNames</text>
+
+    <g transform="translate(60 120)">
+      <rect x="0" y="0" width="115" height="185" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="3"/>
+      <rect x="24" y="28" width="67" height="18" rx="4" fill="#2563eb"/>
+      <rect x="24" y="72" width="67" height="18" rx="4" fill="#2563eb"/>
+      <rect x="24" y="116" width="67" height="18" rx="4" fill="#2563eb"/>
+      <circle cx="58" cy="156" r="11" fill="#22c55e"/>
+    </g>
+
+    <g transform="translate(254 122)">
+      <path d="M 100 0 L 200 82 L 100 164 L 0 82 z" fill="#eff6ff" stroke="#2563eb" stroke-width="3"/>
+      <text x="100" y="66" text-anchor="middle" class="font body" font-weight="700" fill="#1e3a8a">SNI 匹配</text>
+      <text x="100" y="101" text-anchor="middle" class="font body" font-weight="700" fill="#1e3a8a">serverNames?</text>
+    </g>
+  </g>
+
+  <g id="dest" transform="translate(1370 250)">
+    <rect x="0" y="0" width="340" height="300" rx="20" fill="#ffffff" stroke="#ccfbf1" stroke-width="2" filter="url(#softShadow)"/>
+    <circle cx="170" cy="112" r="63" fill="#ccfbf1" stroke="#0891b2" stroke-width="4"/>
+    <path d="M107 112 H233 M170 49 C137 84 137 146 170 175 M170 49 C203 84 203 146 170 175 M119 76 C152 94 188 94 221 76 M119 148 C152 130 188 130 221 148" fill="none" stroke="#0891b2" stroke-width="4" stroke-linecap="round"/>
+    <text x="170" y="235" text-anchor="middle" class="font card-title">伪装目标网站 dest</text>
+    <text x="170" y="268" text-anchor="middle" class="font card-sub">看起来像普通 HTTPS 站点</text>
+  </g>
+
+  <!-- TLS packet, placed in its own clear lane -->
+  <g id="clienthello" transform="translate(455 660)">
+    <rect x="0" y="0" width="500" height="170" rx="20" fill="#eef6ff" stroke="#60a5fa" stroke-width="2" filter="url(#softShadow)"/>
+    <text x="34" y="45" class="font body" font-weight="700" fill="#1e3a8a">TLS ClientHello</text>
+    <text x="34" y="86" class="font body">SNI = serverName</text>
+    <text x="34" y="126" class="font body">ALPN / Public Key / Short ID</text>
+    <text x="34" y="156" class="font small">SNI 在握手早期随 ClientHello 发送到节点</text>
+  </g>
+
+  <!-- Outcome cards -->
+  <g id="success" transform="translate(620 895)">
+    <rect x="0" y="0" width="430" height="145" rx="20" fill="#ecfdf5" stroke="#34d399" stroke-width="2" filter="url(#softShadow)"/>
+    <circle cx="64" cy="72" r="34" fill="#10b981"/>
+    <path d="M46 70 L60 85 L88 50" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="250" y="50" text-anchor="middle" class="font body" font-weight="700" fill="#065f46">匹配 + 验证通过</text>
+    <text x="250" y="91" text-anchor="middle" class="font card-sub" fill="#047857">进入代理隧道</text>
+    <text x="250" y="124" text-anchor="middle" class="font card-sub" fill="#047857">转发真实目标流量</text>
+  </g>
+
+  <g id="failure" transform="translate(1175 895)">
+    <rect x="0" y="0" width="430" height="145" rx="20" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2" filter="url(#softShadow)"/>
+    <circle cx="64" cy="72" r="34" fill="#64748b"/>
+    <path d="M47 55 L82 90 M82 55 L47 90" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+    <text x="250" y="50" text-anchor="middle" class="font body" font-weight="700" fill="#334155">不匹配或验证失败</text>
+    <text x="250" y="91" text-anchor="middle" class="font card-sub">走伪装/回落路径</text>
+    <text x="250" y="124" text-anchor="middle" class="font card-sub">连接 dest 网站</text>
+  </g>
+
+  <!-- Arrows and route labels -->
+  <path d="M410 365 H650" fill="none" stroke="#2563eb" stroke-width="5" stroke-linecap="round" marker-end="url(#arrowBlue)"/>
+  <g transform="translate(430 255)">
+    <rect x="0" y="0" width="230" height="90" rx="16" fill="#ffffff" stroke="#bfdbfe" stroke-width="2"/>
+    <text x="115" y="34" text-anchor="middle" class="font body" font-weight="700" fill="#1e3a8a">1. DNS / TCP</text>
+    <text x="115" y="66" text-anchor="middle" class="font small">连接到节点 IP:443</text>
+  </g>
+
+  <path d="M285 550 V745 H435" fill="none" stroke="#2563eb" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowBlue)"/>
+  <path d="M975 745 H1150 V608" fill="none" stroke="#2563eb" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowBlue)"/>
+
+  <path d="M1024 548 V875" fill="none" stroke="#059669" stroke-width="5" stroke-linecap="round" marker-end="url(#arrowGreen)"/>
+  <g transform="translate(985 630)">
+    <rect x="0" y="0" width="62" height="34" rx="17" fill="#059669"/>
+    <text x="31" y="24" text-anchor="middle" class="font label">是</text>
+  </g>
+
+  <path d="M1145 405 H1265 V875" fill="none" stroke="#64748b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrowSlate)"/>
+  <g transform="translate(1210 347)">
+    <rect x="0" y="0" width="62" height="34" rx="17" fill="#64748b"/>
+    <text x="31" y="24" text-anchor="middle" class="font label">否</text>
+  </g>
+
+  <path d="M1390 895 V710 H1540 V565" fill="none" stroke="#64748b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="12 12" marker-end="url(#arrowSlate)"/>
+
+  <!-- Observer panel -->
+  <g id="observer" transform="translate(170 1180)">
+    <rect x="0" y="-70" width="1460" height="115" rx="24" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" filter="url(#softShadow)"/>
+    <g transform="translate(56 -42)">
+      <path d="M0 40 C45 -8 102 -8 147 40 C102 88 45 88 0 40 z" fill="#e0f2fe" stroke="#0284c7" stroke-width="4"/>
+      <circle cx="74" cy="40" r="21" fill="#0284c7"/>
+      <circle cx="74" cy="40" r="8" fill="#ffffff"/>
+    </g>
+    <text x="230" y="-25" class="font body" font-weight="700">网络观察者视角</text>
+    <text x="230" y="8" class="font small">可见：节点 IP、端口、TLS ClientHello 中的 SNI。</text>
+    <text x="760" y="8" class="font small">不可见：TLS 加密后的实际 HTTP 请求内容与代理隧道内数据。</text>
+  </g>
+</svg>

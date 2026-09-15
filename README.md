@@ -1,7 +1,7 @@
 # RealiTLScanner
 
 <p align="center">
-  <img src="reality-sni-path.svg" alt="RealiTLScanner Logo" width="128" height="128" />
+  <img src="build/appicon.png" alt="RealiTLScanner Logo" width="128" height="128" />
 </p>
 
 <p align="center">
@@ -335,6 +335,10 @@ IP,ORIGIN,TLS,ALPN,CURVE,CERT_LENGTH,CERT_SIGNATURE,CERT_PUBLICKEY,CERT_DOMAIN,C
 | **`GEO_CODE`** | `US` | 目标服务器物理所在国家/地区代码 | 辅助筛选机房位置（如 US、HK、JP、SG、DE） |
 
 ### 🎯 如何挑选优质 Reality 目标节点？
+
+<p align="center">
+  <img src="reality-sni-path.svg" alt="SNI 域名在 Reality 请求中的作用与路径" width="100%" />
+</p>
 
 1. **协议版本强校验**：`TLS` 必须为 `1.3`，非 1.3 的目标直接舍弃。
 2. **ALPN 优选 h2**：`ALPN` 最好包含 `h2`，因为绝大多数现代网站（如大型跨国企业、开源镜像站）均支持 HTTP/2。

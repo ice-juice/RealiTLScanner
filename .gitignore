@@ -18,3 +18,11 @@ dist/
 *.exe~
 frontend/package.json.md5
 
+# Local tools and caches
+.codegraph/
+.playwright-mcp/
+.vmark/
+.nvmdrc
+*-preview.png
+
+
