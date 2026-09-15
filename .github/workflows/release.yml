@@ -9,10 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build and publish release
+  cli:
+    name: CLI (cross-platform)
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -25,11 +24,10 @@ jobs:
       - name: Run tests
         run: go test ./...
 
-      - name: Build release assets
+      - name: Build CLI assets
         shell: bash
         run: |
           set -euo pipefail
-
           version="${GITHUB_REF_NAME}"
           mkdir -p dist
 
@@ -43,7 +41,7 @@ jobs:
 
             mkdir -p "${pkg}"
             CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
-              go build -trimpath -ldflags="-s -w" -o "${pkg}/RealiTLScanner${ext}" .
+              go build -trimpath -ldflags="-s -w" -o "${pkg}/RealiTLScanner${ext}" ./cmd/cli
             cp README.md LICENSE "${pkg}/"
 
             if [[ "${goos}" == "windows" ]]; then
@@ -62,7 +60,115 @@ jobs:
           build_asset linux amd64 "" linux-x64
           build_asset linux arm64 "" linux-arm64
 
-          (cd dist && sha256sum *.zip *.tar.gz > SHA256SUMS.txt)
+      - name: Upload CLI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+
+  desktop-windows:
+    name: Desktop Windows
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build native desktop
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          wails build -platform windows/amd64 -nsis -ldflags "-s -w"
+          if (Test-Path build/bin) {
+            Copy-Item -Recurse build/bin dist/wails-windows
+          }
+          go build -trimpath -ldflags="-s -w" -o dist/RealiTLScanner-desktop.exe ./cmd/desktop
+          Compress-Archive -Path dist/RealiTLScanner-desktop.exe,README.md,LICENSE,frontend/fallback.html -DestinationPath dist/RealiTLScanner-${{ github.ref_name }}-windows-desktop-portable.zip
+
+      - name: Upload Windows desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: |
+            dist/*.zip
+            dist/wails-windows/**
+
+  desktop-macos:
+    name: Desktop macOS
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build native desktop
+        run: |
+          mkdir -p dist/pkg
+          wails build -platform darwin/universal -ldflags "-s -w"
+          if [ -d build/bin ]; then cp -R build/bin dist/wails-macos; fi
+          go build -trimpath -ldflags="-s -w" -o dist/pkg/RealiTLScanner-desktop ./cmd/desktop
+          cp README.md LICENSE dist/pkg/
+          tar -C dist/pkg -czf dist/RealiTLScanner-${GITHUB_REF_NAME}-macos-desktop-portable.tar.gz .
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+
+      - name: Upload macOS desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: |
+            dist/*.tar.gz
+            dist/wails-macos/**
+
+  release:
+    name: Publish GitHub Release
+    needs: [cli, desktop-windows, desktop-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd dist
+          find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
 
       - name: Write release notes
         shell: bash
@@ -70,21 +176,15 @@ jobs:
           cat > RELEASE_NOTES.md <<'EOF'
           ## Changes
 
-          - Fix CSV output escaping so issuers containing commas no longer shift the `GEO_CODE` column.
-          - Filter certificate domains to valid SAN DNS names instead of using Common Name fallback values.
-          - Deduplicate scanner output by normalized certificate domain.
-          - Add tests for CSV escaping, output flushing, domain filtering, and domain deduplication.
+          - Split the scanner into `internal/scan` + `cmd/cli` + `cmd/desktop`.
+          - CLI flags, defaults, and the 11-column CSV header are unchanged.
+          - Native Wails desktop window on Windows and macOS, plus a browser HTTP fallback.
 
           ## Assets
 
-          - Windows x64: 64-bit Intel/AMD Windows
-          - Windows x86: 32-bit Windows
-          - Windows ARM64: ARM-based Windows devices
-          - macOS Intel: Intel-based Macs
-          - macOS Apple Silicon: M-series Macs
-          - Linux x64: 64-bit Intel/AMD Linux
-          - Linux x86: 32-bit Linux
-          - Linux ARM64: ARM-based Linux
+          - CLI zip/tar.gz for Windows, macOS, and Linux
+          - Windows desktop portable zip (and NSIS installer when Wails build succeeds)
+          - macOS desktop portable archive (and .app/.dmg when Wails build succeeds)
 
           See `SHA256SUMS.txt` for checksums.
           EOF
@@ -94,6 +194,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
+            dist/**/*.zip \
+            dist/**/*.tar.gz \
             dist/*.zip \
             dist/*.tar.gz \
             dist/SHA256SUMS.txt \

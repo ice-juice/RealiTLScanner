@@ -6,3 +6,15 @@ RealiTLScanner.exe
 # All CSV and TXT files
 *.csv
 *.txt
+
+# Desktop / frontend
+frontend/node_modules/
+frontend/dist/
+cmd/desktop/build/
+build/bin/
+wailsjs/
+dist/
+*.exe
+*.exe~
+frontend/package.json.md5
+

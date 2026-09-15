@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RealiTLScanner</title>
+  <style>
+    :root {
+      --bg: #0f1613;
+      --panel: #18241e;
+      --line: #2a3d33;
+      --text: #e8f0eb;
+      --muted: #8aa394;
+      --accent: #2e7d5b;
+      --accent-soft: #1d4d38;
+      --danger: #c45c5c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei UI", "PingFang SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 20px; border-bottom: 1px solid var(--line);
+    }
+    h1 { margin: 0; font-size: 18px; }
+    .layout { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 120px); }
+    .panel { padding: 16px 20px; border-right: 1px solid var(--line); }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+    input, select {
+      width: 100%; padding: 8px 10px; border-radius: 6px;
+      border: 1px solid var(--line); background: #101a15; color: var(--text);
+    }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+    button {
+      border: 0; border-radius: 6px; padding: 10px 14px; cursor: pointer;
+      background: var(--accent); color: white; font-weight: 600;
+    }
+    button.stop { background: var(--danger); }
+    button.ghost { background: var(--accent-soft); }
+    .tabs { display: flex; gap: 8px; padding: 12px 20px 0; }
+    .tabs button { background: transparent; color: var(--muted); }
+    .tabs button.active { color: var(--text); border-bottom: 2px solid var(--accent); border-radius: 0; }
+    table { width: 100%; border-collapse: collapse; font-family: Consolas, "SF Mono", monospace; font-size: 12px; }
+    th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+    #log {
+      height: calc(100vh - 220px); overflow: auto; padding: 12px 20px;
+      font-family: Consolas, monospace; font-size: 12px; white-space: pre-wrap;
+    }
+    footer {
+      display: flex; align-items: center; gap: 16px;
+      padding: 10px 20px; border-top: 1px solid var(--line); font-size: 13px;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .dot.run { background: #3ecf8e; }
+    .hint { color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>RealiTLScanner</h1>
+    <span class="hint">浏览器回退界面 · 原生窗口请使用 wails build</span>
+  </header>
+  <div class="layout">
+    <aside class="panel">
+      <label>目标类型</label>
+      <select id="kind">
+        <option value="addr">单个目标</option>
+        <option value="file">目标文件</option>
+        <option value="url">网页抓取</option>
+      </select>
+      <label>目标</label>
+      <input id="target" placeholder="IP / CIDR / 域名" />
+      <div class="row">
+        <div><label>端口</label><input id="port" type="number" value="443" /></div>
+        <div><label>发现范围</label>
+          <select id="scope">
+            <option value="prefix">BGP 前缀</option>
+            <option value="asn">ASN</option>
+            <option value="nearby">邻近 IP</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div><label>扫描线程</label><input id="scanThreads" type="number" value="100" /></div>
+        <div><label>探测线程</label><input id="probeThreads" type="number" value="100" /></div>
+      </div>
+      <div class="row">
+        <div><label>超时(秒)</label><input id="timeout" type="number" value="10" /></div>
+        <div><label>上限</label><input id="limit" type="number" value="4096" /></div>
+      </div>
+      <label>输出文件</label>
+      <input id="output" />
+      <div class="row" style="margin-top:16px">
+        <button id="start">开始扫描</button>
+        <button id="stop" class="stop">停止</button>
+      </div>
+    </aside>
+    <main>
+      <div class="tabs">
+        <button class="active" data-tab="results">命中结果</button>
+        <button data-tab="logs">运行日志</button>
+      </div>
+      <div id="results">
+        <table>
+          <thead>
+            <tr>
+              <th>IP</th><th>ORIGIN</th><th>TLS</th><th>域名</th><th>颁发者</th><th>地区</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div id="log" hidden></div>
+    </main>
+  </div>
+  <footer>
+    <div class="dot" id="dot"></div>
+    <span id="state">idle</span>
+    <span id="progress">0 / 0 · 命中 0 · 0/s</span>
+    <button class="ghost" id="openDir">打开目录</button>
+  </footer>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let outputPath = "";
+    async function loadDefaults() {
+      const d = await (await fetch("/api/defaults")).json();
+      $("kind").value = d.targetKind || "addr";
+      $("target").value = d.targetValue || "";
+      $("port").value = d.port || 443;
+      $("scope").value = d.scope || "prefix";
+      $("scanThreads").value = d.scanThreads || 100;
+      $("probeThreads").value = d.probeThreads || 100;
+      $("timeout").value = d.timeoutSec || 10;
+      $("limit").value = d.limit ?? 4096;
+      $("output").value = d.outputPath || "";
+      outputPath = d.outputPath || "";
+    }
+    function payload() {
+      return {
+        targetKind: $("kind").value,
+        targetValue: $("target").value,
+        port: Number($("port").value),
+        scanThreads: Number($("scanThreads").value),
+        probeThreads: Number($("probeThreads").value),
+        timeoutSec: Number($("timeout").value),
+        probeTimeoutSec: 1,
+        scope: $("scope").value,
+        limit: Number($("limit").value),
+        asnMaxPrefixes: 32,
+        enableIPv6: false,
+        disablePortProbe: false,
+        verifySni: true,
+        verbose: true,
+        outputPath: $("output").value,
+      };
+    }
+    $("start").onclick = async () => {
+      const res = await fetch("/api/start", { method: "POST", body: JSON.stringify(payload()) });
+      if (!res.ok) alert(await res.text());
+    };
+    $("stop").onclick = () => fetch("/api/stop", { method: "POST" });
+    $("openDir").onclick = () => fetch("/api/open-folder?path=" + encodeURIComponent($("output").value || outputPath));
+    document.querySelectorAll(".tabs button").forEach((btn) => {
+      btn.onclick = () => {
+        document.querySelectorAll(".tabs button").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const tab = btn.dataset.tab;
+        $("results").hidden = tab !== "results";
+        $("log").hidden = tab !== "logs";
+      };
+    });
+    const es = new EventSource("/api/events");
+    es.onmessage = (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.event === "scan:state") {
+        $("state").textContent = msg.data.state + (msg.data.error ? " " + msg.data.error : "");
+        $("dot").className = "dot" + (msg.data.state === "scanning" || msg.data.state === "planning" ? " run" : "");
+      }
+      if (msg.event === "scan:progress") {
+        const p = msg.data;
+        $("progress").textContent = `${p.Generated || 0} / ${p.Total || 0} · 命中 ${p.Found || 0} · ${(p.Rate || 0).toFixed(1)}/s`;
+      }
+      if (msg.event === "scan:results") {
+        for (const r of msg.data || []) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${r.ip}</td><td>${r.origin}</td><td>${r.tls}</td><td>${r.certDomain}</td><td>${r.certIssuer}</td><td>${r.geoCode}</td>`;
+          $("rows").appendChild(tr);
+        }
+      }
+      if (msg.event === "scan:logs") {
+        for (const line of msg.data || []) {
+          $("log").textContent += `[${line.level}] ${line.message}\n`;
+        }
+      }
+    };
+    loadDefaults();
+  </script>
+</body>
+</html>

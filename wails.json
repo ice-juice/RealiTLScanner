@@ -1,0 +1,22 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "RealiTLScanner",
+  "outputfilename": "RealiTLScanner",
+  "frontend:dir": "./frontend",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "./frontend",
+  "author": {
+    "name": "XTLS",
+    "email": ""
+  },
+  "info": {
+    "companyName": "XTLS",
+    "productName": "RealiTLScanner",
+    "productVersion": "0.2.0",
+    "copyright": "MIT",
+    "comments": "Reality TLS Scanner desktop"
+  }
+}
