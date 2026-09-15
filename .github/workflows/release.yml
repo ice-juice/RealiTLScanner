@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   cli:
-    name: CLI (cross-platform)
+    name: Build CLI (Cross-Platform)
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -19,12 +19,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.26.x"
+          go-version-file: "go.mod"
+          cache: true
 
       - name: Run tests
-        run: go test ./...
+        run: go test -v ./internal/scan/...
 
-      - name: Build CLI assets
+      - name: Build CLI binaries
         shell: bash
         run: |
           set -euo pipefail
@@ -36,9 +37,10 @@ jobs:
             local goarch="$2"
             local ext="$3"
             local label="$4"
-            local name="RealiTLScanner-${version}-${label}"
+            local name="RealiTLScanner-${version}-cli-${label}"
             local pkg="dist/${name}"
 
+            echo "==> Building ${name} (${goos}/${goarch})"
             mkdir -p "${pkg}"
             CGO_ENABLED=0 GOOS="${goos}" GOARCH="${goarch}" \
               go build -trimpath -ldflags="-s -w" -o "${pkg}/RealiTLScanner${ext}" ./cmd/cli
@@ -49,6 +51,7 @@ jobs:
             else
               tar -C "${pkg}" -czf "dist/${name}.tar.gz" .
             fi
+            rm -rf "${pkg}"
           }
 
           build_asset windows 386 .exe windows-x86
@@ -63,13 +66,13 @@ jobs:
       - name: Upload CLI artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: cli
+          name: cli-artifacts
           path: |
             dist/*.zip
             dist/*.tar.gz
 
   desktop-windows:
-    name: Desktop Windows
+    name: Build Desktop GUI (Windows)
     runs-on: windows-latest
     steps:
       - name: Check out repository
@@ -78,39 +81,80 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.26.x"
+          go-version-file: "go.mod"
+          cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
 
       - name: Run tests
-        run: go test ./...
+        run: go test -v ./...
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Build native desktop
+      - name: Try install NSIS for installer build
+        shell: powershell
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          wails build -platform windows/amd64 -nsis -ldflags "-s -w"
-          if (Test-Path build/bin) {
-            Copy-Item -Recurse build/bin dist/wails-windows
+          try {
+            choco install nsis -y --no-progress
+          } catch {
+            Write-Warning "NSIS installation via chocolatey failed or skipped."
           }
-          go build -trimpath -ldflags="-s -w" -o dist/RealiTLScanner-desktop.exe ./cmd/desktop
-          Compress-Archive -Path dist/RealiTLScanner-desktop.exe,README.md,LICENSE,frontend/fallback.html -DestinationPath dist/RealiTLScanner-${{ github.ref_name }}-windows-desktop-portable.zip
+
+      - name: Build Wails Native Desktop Application
+        shell: powershell
+        run: |
+          $version = "${{ github.ref_name }}"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          # 1. Build portable native Windows GUI executable
+          wails build -platform windows/amd64 -ldflags "-s -w"
+
+          if (Test-Path "build/bin/RealiTLScanner.exe") {
+            $portableDir = "dist/pkg-win-gui"
+            New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+            Copy-Item "build/bin/RealiTLScanner.exe" "$portableDir/"
+            Copy-Item "README.md" "$portableDir/"
+            Copy-Item "LICENSE" "$portableDir/"
+            Compress-Archive -Path "$portableDir/*" -DestinationPath "dist/RealiTLScanner-$version-windows-x64-gui.zip" -Force
+            Remove-Item -Recurse -Force $portableDir
+          }
+
+          # 2. Try build NSIS installer if NSIS is available
+          try {
+            wails build -platform windows/amd64 -nsis -ldflags "-s -w"
+            Get-ChildItem -Path "build/bin" -Filter "*installer*.exe" | ForEach-Object {
+              Copy-Item $_.FullName "dist/RealiTLScanner-$version-windows-x64-gui-installer.exe"
+            }
+          } catch {
+            Write-Warning "NSIS build step encountered an issue; proceeding with portable build."
+          }
+
+          # 3. Build HTTP WebUI fallback package
+          $webDir = "dist/pkg-win-webui"
+          New-Item -ItemType Directory -Force -Path $webDir | Out-Null
+          go build -trimpath -ldflags="-s -w" -o "$webDir/RealiTLScanner-webui.exe" ./cmd/desktop
+          Copy-Item "frontend/fallback.html" "$webDir/"
+          Copy-Item "README.md" "$webDir/"
+          Copy-Item "LICENSE" "$webDir/"
+          Compress-Archive -Path "$webDir/*" -DestinationPath "dist/RealiTLScanner-$version-windows-x64-webui.zip" -Force
+          Remove-Item -Recurse -Force $webDir
 
       - name: Upload Windows desktop artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-windows
+          name: desktop-windows-artifacts
           path: |
             dist/*.zip
-            dist/wails-windows/**
+            dist/*.exe
 
   desktop-macos:
-    name: Desktop macOS
+    name: Build Desktop GUI (macOS Universal)
     runs-on: macos-latest
     steps:
       - name: Check out repository
@@ -119,37 +163,51 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.26.x"
+          go-version-file: "go.mod"
+          cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
 
       - name: Run tests
-        run: go test ./...
+        run: go test -v ./...
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Build native desktop
+      - name: Build Wails Native macOS Desktop Application
+        shell: bash
         run: |
-          mkdir -p dist/pkg
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          mkdir -p dist
+
+          # 1. Build universal native macOS application bundle (.app)
           wails build -platform darwin/universal -ldflags "-s -w"
-          if [ -d build/bin ]; then cp -R build/bin dist/wails-macos; fi
-          go build -trimpath -ldflags="-s -w" -o dist/pkg/RealiTLScanner-desktop ./cmd/desktop
-          cp README.md LICENSE dist/pkg/
-          tar -C dist/pkg -czf dist/RealiTLScanner-${GITHUB_REF_NAME}-macos-desktop-portable.tar.gz .
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
+
+          if [ -d "build/bin/RealiTLScanner.app" ]; then
+            (cd build/bin && zip -r -9 "../../dist/RealiTLScanner-${version}-macos-universal-gui.zip" RealiTLScanner.app)
+            tar -czf "dist/RealiTLScanner-${version}-macos-universal-gui.tar.gz" -C build/bin RealiTLScanner.app
+          fi
+
+          # 2. Build HTTP WebUI fallback package
+          mkdir -p dist/pkg-mac-webui
+          go build -trimpath -ldflags="-s -w" -o dist/pkg-mac-webui/RealiTLScanner-webui ./cmd/desktop
+          cp frontend/fallback.html README.md LICENSE dist/pkg-mac-webui/
+          tar -C dist/pkg-mac-webui -czf "dist/RealiTLScanner-${version}-macos-webui.tar.gz" .
+          rm -rf dist/pkg-mac-webui
 
       - name: Upload macOS desktop artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-macos
+          name: desktop-macos-artifacts
           path: |
+            dist/*.zip
             dist/*.tar.gz
-            dist/wails-macos/**
 
   release:
     name: Publish GitHub Release
@@ -159,34 +217,68 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download all built artifacts
         uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: dist-artifacts
           merge-multiple: true
 
-      - name: Checksums
-        run: |
-          cd dist
-          find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
-
-      - name: Write release notes
+      - name: Prepare Release Directory & Checksums
         shell: bash
         run: |
-          cat > RELEASE_NOTES.md <<'EOF'
-          ## Changes
+          set -euo pipefail
+          mkdir -p release-dist
+          cp dist-artifacts/*.zip release-dist/ 2>/dev/null || true
+          cp dist-artifacts/*.tar.gz release-dist/ 2>/dev/null || true
+          cp dist-artifacts/*.exe release-dist/ 2>/dev/null || true
 
-          - Split the scanner into `internal/scan` + `cmd/cli` + `cmd/desktop`.
-          - CLI flags, defaults, and the 11-column CSV header are unchanged.
-          - Native Wails desktop window on Windows and macOS, plus a browser HTTP fallback.
+          cd release-dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
-          ## Assets
+      - name: Generate Release Notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME}"
+          cat > RELEASE_NOTES.md <<EOF
+          # RealiTLScanner ${version} 发布说明
 
-          - CLI zip/tar.gz for Windows, macOS, and Linux
-          - Windows desktop portable zip (and NSIS installer when Wails build succeeds)
-          - macOS desktop portable archive (and .app/.dmg when Wails build succeeds)
+          欢迎使用 **RealiTLScanner ${version}**！本版本带来了全新的现代化跨平台原生桌面应用程序（GUI）以及解耦优化的命令行版本（CLI）。
 
-          See `SHA256SUMS.txt` for checksums.
+          ---
+
+          ### 📦 资产下载指南 (Assets Guide)
+
+          #### 1. 桌面图形化版本 (Desktop GUI) - 推荐普通用户
+          - **Windows (x64)**:
+            - \`RealiTLScanner-${version}-windows-x64-gui.zip\`：绿色便携版，解压后双击 \`RealiTLScanner.exe\` 即可运行。
+            - \`RealiTLScanner-${version}-windows-x64-gui-installer.exe\`：Windows 安装包（如生成）。
+          - **macOS (Universal - Apple Silicon M系列 & Intel 双架构)**:
+            - \`RealiTLScanner-${version}-macos-universal-gui.zip\` / \`.tar.gz\`：解压后将 \`RealiTLScanner.app\` 拖入 Applications 即可。
+            - *提示*：macOS 初次打开如提示损坏或无法验证开发者，请在终端执行：\`xattr -dr com.apple.quarantine /Applications/RealiTLScanner.app\`
+
+          #### 2. 命令行工具 (CLI) - 推荐服务器 / 脚本自动化
+          - **Windows**: \`RealiTLScanner-${version}-cli-windows-x64.zip\` / \`x86\` / \`arm64\`
+          - **Linux**: \`RealiTLScanner-${version}-cli-linux-x64.tar.gz\` / \`arm64\` / \`x86\`
+          - **macOS**: \`RealiTLScanner-${version}-cli-macos-apple-silicon.tar.gz\` / \`macos-intel.tar.gz\`
+
+          #### 3. 浏览器回退版本 (WebUI Fallback)
+          - \`RealiTLScanner-${version}-*-webui.*\`：适用于无原生 GUI 环境时在浏览器中打开使用。
+
+          ---
+
+          ### 🌟 主要特性 (Highlights)
+          - **全新暗黑现代化 UI**：采用 Dark Slate & Emerald 极客美学界面，流畅动效与直观交互。
+          - **全功能控制面板**：支持单目标 IP/CIDR/域名、本地文件批量导入、网页镜像站自动爬取。
+          - **BGP / ASN / Nearby 智能扩散**：自动根据种子 IP 追溯 BGP 宣告前缀与 ASN 自治域。
+          - **实时仪表盘与日志流**：实时监控探测速率、扫描进度、命中结果，支持关键词即时过滤与双击复制。
+          - **内置 GeoIP 支持**：界面感知数据库状态，支持一键自动下载 MaxMind Country.mmdb。
+          - **优雅停止与结果持久化**：随扫随存为标准 11 列 CSV 文件，中断扫描不丢数据。
+
+          ---
+
+          详细使用说明请参阅仓库 [README.md](https://github.com/${{ github.repository }})。
+          完整 SHA256 校验和见下方的 \`SHA256SUMS.txt\` 文件。
           EOF
 
       - name: Publish GitHub Release
@@ -194,10 +286,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            dist/**/*.zip \
-            dist/**/*.tar.gz \
-            dist/*.zip \
-            dist/*.tar.gz \
-            dist/SHA256SUMS.txt \
+            release-dist/* \
             --title "RealiTLScanner ${GITHUB_REF_NAME}" \
             --notes-file RELEASE_NOTES.md
