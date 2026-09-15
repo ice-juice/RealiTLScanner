@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+env:
+  GO_VERSION_FILE: go.mod
+  NODE_VERSION: "22"
+  WAILS_VERSION: v2.15.0
+
 jobs:
   cli:
     name: Build CLI (Cross-Platform)
@@ -19,11 +24,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: "go.mod"
+          go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
       - name: Run tests
-        run: go test -v ./internal/scan/...
+        run: go test -v ./internal/...
 
       - name: Build CLI binaries
         shell: bash
@@ -70,6 +75,7 @@ jobs:
           path: |
             dist/*.zip
             dist/*.tar.gz
+          if-no-files-found: error
 
   desktop-windows:
     name: Build Desktop GUI (Windows)
@@ -81,69 +87,72 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: "go.mod"
+          go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: "frontend/package-lock.json"
 
       - name: Run tests
-        run: go test -v ./...
+        run: go test -v ./internal/...
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend assets
+        working-directory: frontend
+        run: npm run build
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
 
-      - name: Try install NSIS for installer build
-        shell: powershell
+      - name: Build portable Windows GUI
+        shell: pwsh
         run: |
-          try {
-            choco install nsis -y --no-progress
-          } catch {
-            Write-Warning "NSIS installation via chocolatey failed or skipped."
+          $ErrorActionPreference = "Stop"
+          wails build -platform windows/amd64 -s -ldflags "-s -w"
+          if (-not (Test-Path "build/bin/RealiTLScanner.exe")) {
+            throw "Wails did not produce build/bin/RealiTLScanner.exe"
           }
 
-      - name: Build Wails Native Desktop Application
-        shell: powershell
+          $version = $env:GITHUB_REF_NAME
+          $pkg = "dist/pkg-win-gui"
+          New-Item -ItemType Directory -Force -Path $pkg, dist | Out-Null
+          Copy-Item "build/bin/RealiTLScanner.exe" "$pkg/"
+          Copy-Item "README.md","LICENSE" "$pkg/"
+          Compress-Archive -Path "$pkg/*" -DestinationPath "dist/RealiTLScanner-$version-windows-x64-gui.zip" -Force
+          Remove-Item -Recurse -Force $pkg
+
+      - name: Try install NSIS
+        continue-on-error: true
+        run: choco install nsis -y --no-progress
+
+      - name: Try build NSIS installer
+        continue-on-error: true
+        shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}"
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-
-          # 1. Build portable native Windows GUI executable
-          wails build -platform windows/amd64 -ldflags "-s -w"
-
-          if (Test-Path "build/bin/RealiTLScanner.exe") {
-            $portableDir = "dist/pkg-win-gui"
-            New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-            Copy-Item "build/bin/RealiTLScanner.exe" "$portableDir/"
-            Copy-Item "README.md" "$portableDir/"
-            Copy-Item "LICENSE" "$portableDir/"
-            Compress-Archive -Path "$portableDir/*" -DestinationPath "dist/RealiTLScanner-$version-windows-x64-gui.zip" -Force
-            Remove-Item -Recurse -Force $portableDir
+          wails build -platform windows/amd64 -s -nsis -ldflags "-s -w"
+          $version = $env:GITHUB_REF_NAME
+          Get-ChildItem -Path "build/bin" -Filter "*installer*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "dist/RealiTLScanner-$version-windows-x64-gui-installer.exe"
           }
 
-          # 2. Try build NSIS installer if NSIS is available
-          try {
-            wails build -platform windows/amd64 -nsis -ldflags "-s -w"
-            Get-ChildItem -Path "build/bin" -Filter "*installer*.exe" | ForEach-Object {
-              Copy-Item $_.FullName "dist/RealiTLScanner-$version-windows-x64-gui-installer.exe"
-            }
-          } catch {
-            Write-Warning "NSIS build step encountered an issue; proceeding with portable build."
-          }
-
-          # 3. Build HTTP WebUI fallback package
-          $webDir = "dist/pkg-win-webui"
-          New-Item -ItemType Directory -Force -Path $webDir | Out-Null
-          go build -trimpath -ldflags="-s -w" -o "$webDir/RealiTLScanner-webui.exe" ./cmd/desktop
-          Copy-Item "frontend/fallback.html" "$webDir/"
-          Copy-Item "README.md" "$webDir/"
-          Copy-Item "LICENSE" "$webDir/"
-          Compress-Archive -Path "$webDir/*" -DestinationPath "dist/RealiTLScanner-$version-windows-x64-webui.zip" -Force
-          Remove-Item -Recurse -Force $webDir
+      - name: Build Windows WebUI fallback
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = $env:GITHUB_REF_NAME
+          $pkg = "dist/pkg-win-webui"
+          New-Item -ItemType Directory -Force -Path $pkg | Out-Null
+          go build -trimpath -ldflags="-s -w" -o "$pkg/RealiTLScanner-webui.exe" ./cmd/desktop
+          Copy-Item "frontend/fallback.html","README.md","LICENSE" "$pkg/"
+          Compress-Archive -Path "$pkg/*" -DestinationPath "dist/RealiTLScanner-$version-windows-x64-webui.zip" -Force
+          Remove-Item -Recurse -Force $pkg
 
       - name: Upload Windows desktop artifacts
         uses: actions/upload-artifact@v4
@@ -152,9 +161,10 @@ jobs:
           path: |
             dist/*.zip
             dist/*.exe
+          if-no-files-found: error
 
   desktop-macos:
-    name: Build Desktop GUI (macOS Universal)
+    name: Build Desktop GUI (macOS)
     runs-on: macos-latest
     steps:
       - name: Check out repository
@@ -163,38 +173,70 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: "go.mod"
+          go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
           cache-dependency-path: "frontend/package-lock.json"
 
       - name: Run tests
-        run: go test -v ./...
+        run: go test -v ./internal/...
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend assets
+        working-directory: frontend
+        run: npm run build
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
 
-      - name: Build Wails Native macOS Desktop Application
+      - name: Build native macOS GUI
         shell: bash
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME}"
           mkdir -p dist
 
-          # 1. Build universal native macOS application bundle (.app)
-          wails build -platform darwin/universal -ldflags "-s -w"
+          build_app() {
+            local platform="$1"
+            echo "==> wails build -platform ${platform}"
+            wails build -platform "${platform}" -s -ldflags "-s -w"
+          }
 
-          if [ -d "build/bin/RealiTLScanner.app" ]; then
-            (cd build/bin && zip -r -9 "../../dist/RealiTLScanner-${version}-macos-universal-gui.zip" RealiTLScanner.app)
-            tar -czf "dist/RealiTLScanner-${version}-macos-universal-gui.tar.gz" -C build/bin RealiTLScanner.app
+          if ! build_app darwin/universal; then
+            echo "Universal build failed; falling back to darwin/arm64"
+            build_app darwin/arm64
           fi
 
-          # 2. Build HTTP WebUI fallback package
+          app_path=""
+          if [ -d "build/bin/RealiTLScanner.app" ]; then
+            app_path="build/bin/RealiTLScanner.app"
+          else
+            app_path="$(find build/bin -maxdepth 2 -name '*.app' -type d | head -n 1 || true)"
+          fi
+
+          if [ -z "${app_path}" ] || [ ! -d "${app_path}" ]; then
+            echo "Wails did not produce a .app bundle" >&2
+            ls -la build/bin || true
+            exit 1
+          fi
+
+          app_name="$(basename "${app_path}")"
+          (cd "$(dirname "${app_path}")" && zip -r -9 "../../dist/RealiTLScanner-${version}-macos-universal-gui.zip" "${app_name}")
+          tar -czf "dist/RealiTLScanner-${version}-macos-universal-gui.tar.gz" -C "$(dirname "${app_path}")" "${app_name}"
+
+      - name: Build macOS WebUI fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
           mkdir -p dist/pkg-mac-webui
           go build -trimpath -ldflags="-s -w" -o dist/pkg-mac-webui/RealiTLScanner-webui ./cmd/desktop
           cp frontend/fallback.html README.md LICENSE dist/pkg-mac-webui/
@@ -208,6 +250,7 @@ jobs:
           path: |
             dist/*.zip
             dist/*.tar.gz
+          if-no-files-found: error
 
   release:
     name: Publish GitHub Release
@@ -228,12 +271,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-dist
-          cp dist-artifacts/*.zip release-dist/ 2>/dev/null || true
-          cp dist-artifacts/*.tar.gz release-dist/ 2>/dev/null || true
-          cp dist-artifacts/*.exe release-dist/ 2>/dev/null || true
-
+          find dist-artifacts -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.exe' \) -exec cp {} release-dist/ \;
+          if [ -z "$(ls -A release-dist)" ]; then
+            echo "No release assets found" >&2
+            find dist-artifacts -type f || true
+            exit 1
+          fi
           cd release-dist
           sha256sum * > SHA256SUMS.txt
+          ls -lh
           cat SHA256SUMS.txt
 
       - name: Generate Release Notes
@@ -253,7 +299,7 @@ jobs:
           - **Windows (x64)**:
             - \`RealiTLScanner-${version}-windows-x64-gui.zip\`：绿色便携版，解压后双击 \`RealiTLScanner.exe\` 即可运行。
             - \`RealiTLScanner-${version}-windows-x64-gui-installer.exe\`：Windows 安装包（如生成）。
-          - **macOS (Universal - Apple Silicon M系列 & Intel 双架构)**:
+          - **macOS**:
             - \`RealiTLScanner-${version}-macos-universal-gui.zip\` / \`.tar.gz\`：解压后将 \`RealiTLScanner.app\` 拖入 Applications 即可。
             - *提示*：macOS 初次打开如提示损坏或无法验证开发者，请在终端执行：\`xattr -dr com.apple.quarantine /Applications/RealiTLScanner.app\`
 
@@ -285,7 +331,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            release-dist/* \
-            --title "RealiTLScanner ${GITHUB_REF_NAME}" \
-            --notes-file RELEASE_NOTES.md
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" release-dist/* --clobber
+            gh release edit "${GITHUB_REF_NAME}" --title "RealiTLScanner ${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              release-dist/* \
+              --title "RealiTLScanner ${GITHUB_REF_NAME}" \
+              --notes-file RELEASE_NOTES.md
+          fi

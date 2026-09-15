@@ -9,7 +9,8 @@ RealiTLScanner.exe
 
 # Desktop / frontend
 frontend/node_modules/
-frontend/dist/
+frontend/dist/**
+!frontend/dist/index.html
 cmd/desktop/build/
 build/bin/
 wailsjs/
